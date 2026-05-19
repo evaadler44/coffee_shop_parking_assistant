@@ -14,28 +14,26 @@ spans_df = client.spans.get_spans_dataframe(
 
 print(f"Found {len(spans_df)} spans — annotating...")
 
-HALLUCINATION_QUESTIONS = [
-    "What's the address of the nearest parking garage?",
-    "Is there accessible parking for people with disabilities?",
-    "How long can I park in the lot before getting towed?",
-    "Is there parking validation if I buy a coffee?",
-    "Is there valet parking at Merit Coffee South Lamar?",
+HALLUCINATION_KEYWORDS = [
+    "garage", "valet", "towed", "validation", "overnight",
+    "accessible", "disabilities", "time limit"
 ]
 
 for _, row in spans_df.iterrows():
     span_id = row.get("context.span_id")
-    question = row.get("input.value", "")
+    question = str(row.get("attributes.input.value", "")).lower()
     if not span_id:
         continue
 
-    is_hallucination = any(q in str(question) for q in HALLUCINATION_QUESTIONS)
+    is_hallucination = any(kw in question for kw in HALLUCINATION_KEYWORDS)
+    print(f"{'HALLUCINATION' if is_hallucination else 'GROUNDED'}: {question[:70]}")
 
     client.spans.add_span_annotation(
         span_id=span_id,
         annotation_name="user_feedback",
         annotator_kind="HUMAN",
-        label="positive" if not is_hallucination else "negative",
-        explanation="Based on known facts" if not is_hallucination else "May contain guessed information",
+        label="negative" if is_hallucination else "positive",
+        explanation="Outside known knowledge base" if is_hallucination else "Based on known facts",
     )
 
     client.spans.add_span_annotation(
@@ -44,17 +42,15 @@ for _, row in spans_df.iterrows():
         annotator_kind="CODE",
         label="hallucinated" if is_hallucination else "grounded",
         score=0.2 if is_hallucination else 0.95,
-        explanation="Outside known knowledge base" if is_hallucination else "Matches known Merit Coffee facts",
+        explanation="No data available for this question" if is_hallucination else "Matches known Merit Coffee facts",
     )
 
     client.spans.add_span_annotation(
         span_id=span_id,
         annotation_name="parking_accuracy",
         annotator_kind="CODE",
-        score=0.4 if is_hallucination else 0.95,
+        score=0.3 if is_hallucination else 0.95,
         explanation="Low confidence" if is_hallucination else "High confidence",
     )
-
-    print(f"Annotated: {str(question)[:60]}...")
 
 print("\nDone! Refresh your Phoenix dashboard.")
